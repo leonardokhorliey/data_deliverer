@@ -1,5 +1,6 @@
 package com.ebubeokoli.datadeliverer.util;
 
+import com.ebubeokoli.datadeliverer.io.csv.CsvFileHandler;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.csv.CsvMapper;
@@ -15,12 +16,10 @@ import java.nio.file.Path;
 import java.util.*;
 
 public class ChunkHandler implements Runnable {
-
-    private static final int DEFAULT_CHUNK_SIZE = 1_000_000;
-    static int chunkSize;
     private Object chunk;
 
     private OutputConfiguration outputConfig;
+    private RowProcessorConfig rowProcessorConfig;
 
     private Path fullyDefinedPath;
 
@@ -28,14 +27,12 @@ public class ChunkHandler implements Runnable {
                         String outputDirectory,
                         String outputFilesPrefix,
                         int chunkBatchNumber,
-                        OutputConfiguration outputConfig
+                        OutputConfiguration outputConfig,
+                        RowProcessorConfig rowProcessorConfig
     ) {
-//        System.out.println("Param size: " + chunk.size());
         this.chunk = chunk;
-        System.out.println("Assigned size: " + ((Map<String, List<Object>>) this.chunk).size());
-//        System.out.println(chunk.getFirst());
-//        System.out.println(chunk.size());
         this.outputConfig = outputConfig;
+        this.rowProcessorConfig = rowProcessorConfig;
         fullyDefinedPath = Path.of(outputDirectory + "/" + outputFilesPrefix + "_file_" + chunkBatchNumber + "." + outputConfig.getOutputFileType().getLabel());
     }
 
@@ -43,15 +40,7 @@ public class ChunkHandler implements Runnable {
         return fullyDefinedPath;
     }
 
-    public static void setChunkSize(int newChunkSize) {
-        chunkSize = newChunkSize;
-    }
-
-    public static int getChunkSize() {
-        return chunkSize == 0 ? DEFAULT_CHUNK_SIZE : chunkSize;
-    }
-
-    public static boolean processChunkToCsv(List<Map<String, Object>> clickHouseOutputChunk, String fileName) throws IOException {
+    public static boolean processChunkToCsv(Map<String, Object> clickHouseOutputChunk, String fileName) throws IOException {
         ObjectMapper mapper = new ObjectMapper();
         String jsonString = mapper.writeValueAsString(clickHouseOutputChunk);
 
@@ -70,7 +59,6 @@ public class ChunkHandler implements Runnable {
             csvMapper.writerFor(JsonNode.class)
                     .with(csvSchema)
                     .writeValue(outputFile, jsonTree);
-
             return true;
 
         } catch (IOException e) {
@@ -79,34 +67,31 @@ public class ChunkHandler implements Runnable {
 
     }
 
-//    public DataFrame processChunkToDataFrame() throws IOException {
-//        ObjectMapper mapper = new ObjectMapper();
-//        System.out.println(this.chunk.getFirst());
-//        System.out.println("Got here " + this.chunk.size());
-//        String jsonString = mapper.writeValueAsString(this.chunk);
-//
-//        JsonNode jsonTree = new ObjectMapper().readTree(jsonString);
-//
-//        CsvSchema.Builder csvSchemaBuilder = CsvSchema.builder();
-//        JsonNode firstObject = jsonTree.elements().next();
-//        firstObject.fieldNames().forEachRemaining(csvSchemaBuilder::addColumn);
-//        List<String> columns = csvSchemaBuilder
-//                .build()
-//                .withHeader().getColumnNames();
-//
-//        Map<String, List<Object>> colMaps = new LinkedHashMap<>();
-//
-//        for (int i = 0; i < this.chunk.size(); i++) {
-//            Map<String, Object> record = this.chunk.get(i);
-//            for (String col: columns) {
-//                List<Object> colData = colMaps.getOrDefault(col, new ArrayList<>());
-//                colData.add(record.get(col));
-//                colMaps.put(col, colData);
-//            }
-//        }
-//
-//        return DataFrame.byColumn(columns.toArray(String[]::new)).of(colMaps.values().stream().map(Series::ofIterable).toArray(Series[]::new));
-//    }
+    public DataFrame processChunkToDataFrame() throws IOException {
+        ObjectMapper mapper = new ObjectMapper();
+        String jsonString = mapper.writeValueAsString(this.chunk);
+
+        JsonNode jsonTree = new ObjectMapper().readTree(jsonString);
+
+        CsvSchema.Builder csvSchemaBuilder = CsvSchema.builder();
+        JsonNode firstObject = jsonTree.elements().next();
+        firstObject.fieldNames().forEachRemaining(csvSchemaBuilder::addColumn);
+        List<String> columns = csvSchemaBuilder
+                .build()
+                .withHeader().getColumnNames();
+
+        Map<String, List<Object>> colMaps = new LinkedHashMap<>();
+
+        for (Map<String, Object> record : (Iterable<? extends Map<String, Object>>) this.chunk) {
+            for (String col: columns) {
+                List<Object> colData = colMaps.getOrDefault(col, new ArrayList<>());
+                colData.add(record.get(col));
+                colMaps.put(col, colData);
+            }
+        }
+
+        return DataFrame.byColumn(columns.toArray(String[]::new)).of(colMaps.values().stream().map(Series::ofIterable).toArray(Series[]::new));
+    }
 
     public DataFrame processChunkToDataFrameC() throws IOException {
         Set<String> columns = ((Map<String, List<Object>>) this.chunk).keySet();
@@ -119,22 +104,18 @@ public class ChunkHandler implements Runnable {
     @Override
     public void run() {
         long startTime;
+        DataFrame df;
+        try {
+            df = processChunkToDataFrameC();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
         switch (outputConfig.getOutputFileType()) {
             case CSV -> {
                 startTime = new Date().getTime();
-                try {
-                    ChunkHandler.processChunkToCsv((List<Map<String, Object>>) chunk, fullyDefinedPath.toAbsolutePath().toString());
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
+                CsvFileHandler.writeDataFrameToCsv(df, fullyDefinedPath);
             }
             case XLSX -> {
-                DataFrame df = null;
-                try {
-                    df = processChunkToDataFrameC();
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
                 System.out.println(Printers.tabular.toString(df));
                 startTime = new Date().getTime();
 

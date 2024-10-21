@@ -30,7 +30,7 @@ public class GoogleDriveHandler {
     private static final JsonFactory JSON_FACTORY = GsonFactory.getDefaultInstance();
     private static final String TOKENS_DIRECTORY_PATH = "tokens";
 
-    private static Map<String, String> MIME_TYPE_MAPPING;
+    private static final Map<String, String> MIME_TYPE_MAPPING;
 
     /**
      * Global instance of the scopes required by this quickstart.
@@ -112,8 +112,8 @@ public class GoogleDriveHandler {
     public static void main(String... args) throws IOException, GeneralSecurityException {
         // Print the names and IDs for up to 10 files.
         System.out.println(uploadFileToDrive(
-                GoogleDriveDestination.of("1ppn1g9S-rMB5VYTYh29QTDWhKlkzp9-2"),
-                new java.io.File("run_outputs/recon_entries_gap_2024-09-21.csv")
+                GoogleDriveDestination.of(""),
+                new java.io.File("")
         ));
 //
 //

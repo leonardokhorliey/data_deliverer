@@ -93,7 +93,7 @@ public class ClickHouse {
         }
     }
 
-    public static List<String> executeQueryAndWrite(String query, int chunkSize, BiFunction processor) throws ClickHouseException {
+    public static List<String> executeQueryAndWrite(String query, int chunkSize, RowProcessorConfig rowProcessorConfig, BiFunction processor) throws ClickHouseException {
         ClickHouseNode server = ClickHouse.generateServerConnection();
         Map<ClickHouseOption, Serializable> configOptions = new HashMap<>();
 
@@ -112,7 +112,7 @@ public class ClickHouse {
             List<ClickHouseColumn> columnNames = response.getColumns();
             int rowCounter = 0;
             int batch = 1;
-            ClickHouseRowProcessor rowProcessor = new ClickHouseRowProcessor(RowProcessorConfig.BY_COLUMN);
+            ClickHouseRowProcessor rowProcessor = new ClickHouseRowProcessor(rowProcessorConfig);
             for (ClickHouseRecord row: response.records()) {
                 rowProcessor.processRow(row, columnNames);
                 if (++rowCounter == chunkSize) {
@@ -121,7 +121,7 @@ public class ClickHouse {
                     outputPaths.add(fileOutputPath);
                     rowCounter = 0;
                     batch++;
-                    rowProcessor = new ClickHouseRowProcessor(RowProcessorConfig.BY_COLUMN);
+                    rowProcessor = new ClickHouseRowProcessor(rowProcessorConfig);
                 }
             }
             return outputPaths;
